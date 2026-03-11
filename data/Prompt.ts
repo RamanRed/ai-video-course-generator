@@ -10,7 +10,8 @@ This config will be used in the NEXT step to generate animated
 slides and TTS narration.
 Keep everything concise, beginner-friendly, and well-structured.
 Limit each chapter to MAXIMUM 3 subContent points.
-Each chapter should be suitable for 1-3 short animated slides.
+Each chapter should produce exactly 1 short slide.
+Keep narration very brief (2-3 short sentences max).
 
 COURSE CONFIG STRUCTURE REQUIREMENTS:
 Top-level fields:
@@ -72,7 +73,7 @@ RULES:
 - slideIndex MUST start at 1 and increment by 1
 - slideId MUST be: "\${chapterSlug}-0\${slideIndex}" (example: "intro-setup-01")
 - audioFileName MUST be "\${slideId}.mp3"
-- narration.fullText MUST be 3-6 friendly, professional, teacher-style sentences
+- narration.fullText MUST be 2-3 short, friendly, professional, teacher-style sentences (keep it very concise, under 150 characters total)
 - narration text MUST NOT contain reveal tokens or keys (no "r1", "data-reveal", etc.)
 
 REVEAL SYSTEM (VERY IMPORTANT):
@@ -96,7 +97,8 @@ HTML REQUIREMENTS:
 CONTENT EXPECTATIONS (per slide):
 - A header showing courseName + chapterTitle (or chapter label)
 - A big title and a subtitle
-- 2–4 bullets OR cards that progressively reveal (mapped to r1..rn)
+- 2-3 bullets OR cards that progressively reveal (mapped to r1..rn)
+- Keep all text very short and concise — optimized for quick, small videos
 - Visual hierarchy, clean spacing, readable typography, consistent layout
 - Design should still look good if only r1 is visible, then r2, etc.
 

@@ -1,12 +1,8 @@
 import type { Metadata } from "next";
-import { DM_Sans } from "next/font/google";
 import "./globals.css";
-import {ClerkProvider} from '@clerk/nextjs'
+import { ClerkProvider } from "@clerk/nextjs";
 import Provider from "./(auth)/provider";
 import { Toaster } from "@/components/ui/sonner";
-
-
-const AppFont = DM_Sans({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Create Next App",
@@ -20,19 +16,14 @@ export default function RootLayout({
 }>) {
   return (
     <ClerkProvider>
-    <html lang="en">
-      <body
-        className={AppFont.className}
-      >
-        <Provider>
-          {children}
-          <Toaster position="top-center" richColors/>
-        </Provider>
-          
-
-        
-      </body>
-    </html>
+      <html lang="en">
+        <body className="font-sans">
+          <Provider>
+            {children}
+            <Toaster position="top-center" richColors />
+          </Provider>
+        </body>
+      </html>
     </ClerkProvider>
   );
 }

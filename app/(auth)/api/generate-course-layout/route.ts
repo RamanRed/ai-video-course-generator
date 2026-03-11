@@ -4,7 +4,7 @@ import { db } from "@/config/db";
 import { coursesTable } from "@/config/schema";
 import { isDatabaseConnectionError, saveLocalCourse } from "@/lib/dbFallback";
 import { currentUser } from "@clerk/nextjs/server";
-import { genAI } from "@/lib/gemini";
+import { getGeminiModel } from "@/lib/gemini";
 
 type CourseChapter = {
   chapterId: string;
@@ -180,13 +180,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
-      generationConfig: {
-        responseMimeType: "application/json",
-        temperature: 0.2,
-      },
-    });
+    const model = getGeminiModel({ temperature: 0.2 });
 
     const response = await model.generateContent(
       `${Course_config_prompt}\n\nCourse Topic is ${userInput}`,

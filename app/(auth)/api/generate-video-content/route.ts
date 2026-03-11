@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import axios from "axios";
 import { db } from "@/config/db";
 import { chapterContentSlides } from "@/config/schema";
-import { genAI } from "@/lib/gemini";
+import { getGeminiModel } from "@/lib/gemini";
 import { isDatabaseConnectionError, saveLocalSlides } from "@/lib/dbFallback";
 import { Generate_Video_Content_Prompt } from "@/data/Prompt";
 import { saveAudio } from "@/lib/audioStorage";
@@ -21,6 +21,49 @@ type GeneratedSlide = {
 // Prevent 429 errors
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const TTS_MAX_RETRIES = 5;
+
+const requestTtsChunk = async (
+  chunk: string,
+  chunkIndex: number,
+): Promise<Buffer> => {
+  for (let attempt = 0; attempt <= TTS_MAX_RETRIES; attempt++) {
+    try {
+      const res = await axios.post(
+        "https://api.fonada.ai/tts/generate-audio-large",
+        { input: chunk, voice: "Vaanee", Languages: "en-US" },
+        {
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${process.env.FONADALABS_API_KEY}`,
+          },
+          responseType: "arraybuffer",
+          timeout: 120000,
+        },
+      );
+      return Buffer.from(res.data);
+    } catch (error) {
+      const is429 = axios.isAxiosError(error) && error.response?.status === 429;
+      const isServerErr =
+        axios.isAxiosError(error) && (error.response?.status ?? 0) >= 500;
+
+      if ((!is429 && !isServerErr) || attempt === TTS_MAX_RETRIES) {
+        console.error(`TTS error for chunk ${chunkIndex}:`, error);
+        throw error;
+      }
+
+      const delay = 5000 * 2 ** attempt + Math.random() * 1000;
+      console.warn(
+        `TTS chunk ${chunkIndex} got ${error.response?.status}. Retry ${attempt + 1}/${TTS_MAX_RETRIES} in ${Math.round(delay)}ms`,
+      );
+      await sleep(delay);
+    }
+  }
+  throw new Error(
+    `TTS failed for chunk ${chunkIndex} after ${TTS_MAX_RETRIES} retries`,
+  );
+};
+
 // Split text under 450 chars
 const splitTextIntoChunks = (text: string, maxLength: number) => {
   const chunks: string[] = [];
@@ -35,13 +78,7 @@ const splitTextIntoChunks = (text: string, maxLength: number) => {
 export async function POST(req: NextRequest) {
   const { chapter, chapterId, courseId } = await req.json();
 
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
-    generationConfig: {
-      responseMimeType: "application/json",
-      temperature: 0.3,
-    },
-  });
+  const model = getGeminiModel({ temperature: 0.3 });
 
   const response = await model.generateContent(
     Generate_Video_Content_Prompt +
@@ -71,40 +108,19 @@ export async function POST(req: NextRequest) {
     const chunks = splitTextIntoChunks(narration, 430);
     let mergedAudioBuffer = Buffer.alloc(0);
 
-    // 2️⃣ Generate TTS for each chunk and merge
+    // 2️⃣ Generate TTS for each chunk with retry logic
     for (let j = 0; j < chunks.length; j++) {
-      try {
-        const fonadalabsResponse = await axios.post(
-          "https://api.fonada.ai/tts/generate-audio-large",
-          {
-            input: chunks[j],
-            voice: "Vaanee",
-            Languages: "en-US",
-          },
-          {
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${process.env.FONADALABS_API_KEY}`,
-            },
-            responseType: "arraybuffer",
-            timeout: 120000,
-          },
-        );
-
-        const audioBuffer = Buffer.from(fonadalabsResponse.data);
-        mergedAudioBuffer = Buffer.concat([mergedAudioBuffer, audioBuffer]);
-
-        // Avoid 429 rate limit errors
-        await sleep(700);
-      } catch (error) {
-        console.error(`TTS error for chunk ${j}: `, error);
-        throw error;
-      }
+      const audioBuffer = await requestTtsChunk(chunks[j], j);
+      mergedAudioBuffer = Buffer.concat([mergedAudioBuffer, audioBuffer]);
+      await sleep(3000);
     }
 
     // 3️⃣ Upload merged audio to storage (local or S3)
     const audioUrl = await saveAudio(mergedAudioBuffer, slide.audioFileName);
     audioFileUrls[i] = audioUrl;
+
+    // Wait between slides to avoid rate limits
+    await sleep(5000);
   }
 
   // ================= SAVE ALL SLIDES TO DATABASE =================

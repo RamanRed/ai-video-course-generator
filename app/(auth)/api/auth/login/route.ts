@@ -3,9 +3,13 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/config/db";
 import { usersTable } from "@/config/schema";
-import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { signToken, setAuthCookie } from "@/lib/auth";
+import {
+  getLocalUserByEmail,
+  isDatabaseConnectionError,
+} from "@/lib/dbFallback";
+import { eq } from "drizzle-orm";
 
 export async function POST(req: NextRequest) {
   const { email, password } = await req.json();
@@ -17,10 +21,22 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const [user] = await db
-    .select()
-    .from(usersTable)
-    .where(eq(usersTable.email, email));
+  let user;
+
+  try {
+    const users = await db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.email, email));
+
+    user = users[0];
+  } catch (error) {
+    if (!isDatabaseConnectionError(error)) {
+      throw error;
+    }
+
+    user = await getLocalUserByEmail(email);
+  }
 
   if (!user || !user.passwordHash) {
     return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });

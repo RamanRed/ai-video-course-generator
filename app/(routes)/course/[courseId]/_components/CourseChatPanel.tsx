@@ -23,11 +23,12 @@ function CourseChatPanel({ course }: Props) {
   const [open, setOpen] = useState(false);
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
       content:
-        "Ask me anything about this course. I’ll answer using the course notes and previous saved topic records.",
+        "Ask me anything about this course. I'll answer using the course notes and previous saved topic records.",
     },
   ]);
 
@@ -37,6 +38,28 @@ function CourseChatPanel({ course }: Props) {
     () => course?.courseLayout?.courseName || course?.courseName || "this course",
     [course],
   );
+
+  // Load chat history when conversation ID changes
+  const loadChatHistory = async (convId: string) => {
+    try {
+      const response = await axios.get("/api/course-chat", {
+        params: { conversationId: convId },
+      });
+      
+      if (response.data.messages && response.data.messages.length > 0) {
+        setMessages(response.data.messages);
+      }
+    } catch (error) {
+      console.error("Failed to load chat history:", error);
+    }
+  };
+
+  // Load chat history when panel opens with existing conversation
+  useEffect(() => {
+    if (open && conversationId) {
+      loadChatHistory(conversationId);
+    }
+  }, [open, conversationId]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -55,7 +78,13 @@ function CourseChatPanel({ course }: Props) {
       const response = await axios.post("/api/course-chat", {
         courseId: course.courseId,
         question: trimmed,
+        conversationId: conversationId || undefined,
       });
+
+      // Set conversation ID if it's a new conversation
+      if (!conversationId && response.data.conversationId) {
+        setConversationId(response.data.conversationId);
+      }
 
       setMessages((prev) => [
         ...prev,
@@ -77,6 +106,18 @@ function CourseChatPanel({ course }: Props) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const startNewConversation = () => {
+    setConversationId(null);
+    setQuestion("");
+    setMessages([
+      {
+        role: "assistant",
+        content:
+          "Ask me anything about this course. I'll answer using the course notes and previous saved topic records.",
+      },
+    ]);
   };
 
   return (
@@ -103,6 +144,16 @@ function CourseChatPanel({ course }: Props) {
               Ask questions about <span className="text-slate-200">{topicLabel}</span>.
               Powered by local Ollama plus Pinecone topic memory.
             </SheetDescription>
+            {conversationId && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={startNewConversation}
+                className="text-xs text-slate-400 hover:text-slate-200 mt-2"
+              >
+                + New Conversation
+              </Button>
+            )}
           </SheetHeader>
 
           <div className="flex h-[calc(100vh-84px)] flex-col">

@@ -7,10 +7,22 @@ import {
   getCourseSnapshotByCourseId,
   queryCourseRag,
 } from "@/lib/course-rag";
+import {
+  saveChatMessage,
+  createConversation,
+  getConversationMessages,
+  generateConversationId,
+} from "@/lib/chat-persistence";
+import { auth } from "@clerk/nextjs/server";
 
 export async function POST(req: NextRequest) {
   try {
-    const { courseId, question } = await req.json();
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { courseId, question, conversationId } = await req.json();
 
     if (!courseId || !question?.trim()) {
       return NextResponse.json(
@@ -19,12 +31,44 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Use provided conversationId or create new one
+    const chatConversationId =
+      conversationId || generateConversationId();
+
+    // Create conversation if it's new
+    if (!conversationId) {
+      await createConversation(
+        chatConversationId,
+        userId,
+        "course",
+        courseId,
+        undefined,
+        `Course: ${courseId}`,
+      );
+    }
+
+    // Save user message
+    await saveChatMessage(
+      chatConversationId,
+      "user",
+      question,
+    );
+
     const snapshot = await getCourseSnapshotByCourseId(courseId);
 
     if (!snapshot) {
+      const errorMessage =
+        "I could not find that course record yet. Please regenerate the course or upload topic data, then ask again.";
+      
+      await saveChatMessage(
+        chatConversationId,
+        "assistant",
+        errorMessage,
+      );
+
       return NextResponse.json({
-        answer:
-          "I could not find that course record yet. Please regenerate the course or upload topic data, then ask again.",
+        answer: errorMessage,
+        conversationId: chatConversationId,
         needUpload: true,
         namespace: null,
         sources: [],
@@ -69,8 +113,18 @@ ANSWER:`;
     const response = await model.generateContent(prompt);
     const answer = response.response.text();
 
+    // Save assistant response
+    await saveChatMessage(
+      chatConversationId,
+      "assistant",
+      answer,
+      ragResult.matches.map((match) => match.metadata || {}),
+      { namespace: ragResult.namespace, pineconeAvailable: ragResult.pineconeAvailable },
+    );
+
     return NextResponse.json({
       answer,
+      conversationId: chatConversationId,
       namespace: ragResult.namespace,
       sources: ragResult.matches.map((match) => match.metadata || {}),
       pineconeAvailable: ragResult.pineconeAvailable,
@@ -79,6 +133,42 @@ ANSWER:`;
     console.error("Course chat error:", error);
     return NextResponse.json(
       { error: "Failed to answer course question" },
+      { status: 500 },
+    );
+  }
+}
+
+/**
+ * GET /api/course-chat?conversationId=xxx
+ * Retrieve chat history for a conversation
+ */
+export async function GET(req: NextRequest) {
+  try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const url = new URL(req.url);
+    const conversationId = url.searchParams.get("conversationId");
+
+    if (!conversationId) {
+      return NextResponse.json(
+        { error: "conversationId is required" },
+        { status: 400 },
+      );
+    }
+
+    const messages = await getConversationMessages(conversationId);
+
+    return NextResponse.json({
+      conversationId,
+      messages,
+    });
+  } catch (error) {
+    console.error("Failed to get conversation:", error);
+    return NextResponse.json(
+      { error: "Failed to retrieve conversation" },
       { status: 500 },
     );
   }

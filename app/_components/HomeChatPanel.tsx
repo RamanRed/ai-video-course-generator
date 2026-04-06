@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import axios from "axios";
 import { Bot, Loader2, MessageCircleQuestion, Send, Upload } from "lucide-react";
 
@@ -25,17 +25,40 @@ function HomeChatPanel() {
   const [open, setOpen] = useState(false);
   const [topicName, setTopicName] = useState("");
   const [question, setQuestion] = useState("");
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
       content:
-        "Hi! Ask about any topic from previous records. If no records exist, upload a PDF and I’ll index it.",
+        "Hi! Ask about any topic from previous records. If no records exist, upload a PDF and I'll index it.",
     },
   ]);
   const [needUpload, setNeedUpload] = useState(false);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
+
+  // Load chat history when conversation ID changes
+  const loadChatHistory = async (convId: string) => {
+    try {
+      const response = await axios.get("/api/home-chat", {
+        params: { conversationId: convId },
+      });
+      
+      if (response.data.messages && response.data.messages.length > 0) {
+        setMessages(response.data.messages);
+      }
+    } catch (error) {
+      console.error("Failed to load chat history:", error);
+    }
+  };
+
+  // Load chat history when panel opens with existing conversation
+  useEffect(() => {
+    if (open && conversationId) {
+      loadChatHistory(conversationId);
+    }
+  }, [open, conversationId]);
 
   const askQuestion = async () => {
     const topic = topicName.trim();
@@ -53,7 +76,13 @@ function HomeChatPanel() {
       const response = await axios.post("/api/home-chat", {
         topicName: topic,
         question: prompt,
+        conversationId: conversationId || undefined,
       });
+
+      // Set conversation ID if it's a new conversation
+      if (!conversationId && response.data.conversationId) {
+        setConversationId(response.data.conversationId);
+      }
 
       setNeedUpload(Boolean(response.data.needUpload));
       setMessages((prev) => [
@@ -121,6 +150,20 @@ function HomeChatPanel() {
     }
   };
 
+  const startNewConversation = () => {
+    setConversationId(null);
+    setTopicName("");
+    setQuestion("");
+    setMessages([
+      {
+        role: "assistant",
+        content:
+          "Hi! Ask about any topic from previous records. If no records exist, upload a PDF and I'll index it.",
+      },
+    ]);
+    setNeedUpload(false);
+  };
+
   return (
     <>
       <Button
@@ -144,6 +187,16 @@ function HomeChatPanel() {
             <SheetDescription className="text-slate-400">
               Local LLM answers from Pinecone topic memory. Upload PDF if the topic is new.
             </SheetDescription>
+            {conversationId && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={startNewConversation}
+                className="text-xs text-slate-400 hover:text-slate-200 mt-2"
+              >
+                + New Conversation
+              </Button>
+            )}
           </SheetHeader>
 
           <div className="flex h-[calc(100vh-84px)] flex-col">

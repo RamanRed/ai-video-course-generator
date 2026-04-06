@@ -7,10 +7,22 @@ import {
   buildTopicContextFromMatches,
   queryTopicRecords,
 } from "@/lib/course-rag";
+import {
+  saveChatMessage,
+  createConversation,
+  getConversationMessages,
+  generateConversationId,
+} from "@/lib/chat-persistence";
+import { auth } from "@clerk/nextjs/server";
 
 export async function POST(req: NextRequest) {
   try {
-    const { topicName, question } = await req.json();
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { topicName, question, conversationId } = await req.json();
 
     if (!topicName?.trim() || !question?.trim()) {
       return NextResponse.json(
@@ -19,6 +31,29 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Use provided conversationId or create new one
+    const chatConversationId =
+      conversationId || generateConversationId();
+
+    // Create conversation if it's new
+    if (!conversationId) {
+      await createConversation(
+        chatConversationId,
+        userId,
+        "home",
+        undefined,
+        topicName.trim(),
+        `Topic: ${topicName}`,
+      );
+    }
+
+    // Save user message
+    await saveChatMessage(
+      chatConversationId,
+      "user",
+      question,
+    );
+
     const ragResult = await queryTopicRecords({
       topicName: topicName.trim(),
       question: question.trim(),
@@ -26,9 +61,18 @@ export async function POST(req: NextRequest) {
     });
 
     if (!ragResult.matches.length) {
+      const errorMessage =
+        "I could not find records for this topic yet. Please upload a PDF so I can learn this topic first.";
+      
+      await saveChatMessage(
+        chatConversationId,
+        "assistant",
+        errorMessage,
+      );
+
       return NextResponse.json({
-        answer:
-          "I could not find records for this topic yet. Please upload a PDF so I can learn this topic first.",
+        answer: errorMessage,
+        conversationId: chatConversationId,
         needUpload: true,
         namespace: ragResult.namespace,
         pineconeAvailable: ragResult.pineconeAvailable,
@@ -66,9 +110,20 @@ ${question}
 ANSWER:`;
 
     const response = await model.generateContent(prompt);
+    const answer = response.response.text();
+
+    // Save assistant response
+    await saveChatMessage(
+      chatConversationId,
+      "assistant",
+      answer,
+      ragResult.matches.map((match) => match.metadata || {}),
+      { namespace: ragResult.namespace, pineconeAvailable: ragResult.pineconeAvailable },
+    );
 
     return NextResponse.json({
-      answer: response.response.text(),
+      answer: answer,
+      conversationId: chatConversationId,
       needUpload: false,
       namespace: ragResult.namespace,
       sources: ragResult.matches.map((match) => match.metadata || {}),
@@ -78,6 +133,42 @@ ANSWER:`;
     console.error("Home chat error:", error);
     return NextResponse.json(
       { error: "Failed to process home chat query" },
+      { status: 500 },
+    );
+  }
+}
+
+/**
+ * GET /api/home-chat?conversationId=xxx
+ * Retrieve chat history for a conversation
+ */
+export async function GET(req: NextRequest) {
+  try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const url = new URL(req.url);
+    const conversationId = url.searchParams.get("conversationId");
+
+    if (!conversationId) {
+      return NextResponse.json(
+        { error: "conversationId is required" },
+        { status: 400 },
+      );
+    }
+
+    const messages = await getConversationMessages(conversationId);
+
+    return NextResponse.json({
+      conversationId,
+      messages,
+    });
+  } catch (error) {
+    console.error("Failed to get conversation:", error);
+    return NextResponse.json(
+      { error: "Failed to retrieve conversation" },
       { status: 500 },
     );
   }

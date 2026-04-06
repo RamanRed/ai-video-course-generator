@@ -31,6 +31,7 @@ const Hero = () => {
   const [userInput, setUserInput] = useState("");
   const [type, setType] = useState("full-course");
   const [aiProvider, setAiProvider] = useState("local-ai");
+  const [slideModel, setSlideModel] = useState("ollama:mistral:latest");
   const [loading, setLoading] = useState(false);
   // JWT auth: read user from context instead of Clerk's useUser()
   const { userDetail } = useContext(UserDetailContext);
@@ -52,6 +53,7 @@ const Hero = () => {
         userInput,
         type,
         aiProvider,
+        slideModel,
         courseId: courseId,
       });
       console.log(result.data);
@@ -118,6 +120,31 @@ const Hero = () => {
                     <SelectItem value="global-ai">Global AI</SelectItem>
                     <SelectItem value="local-ai">
                       Local AI (Ollama)
+                    </SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <Select value={slideModel} onValueChange={setSlideModel}>
+                <SelectTrigger className="">
+                  <SelectValue placeholder="Slide Model" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectLabel>Slide Model</SelectLabel>
+                    <SelectItem value="ollama:mistral:latest">
+                      Ollama · Mistral Latest
+                    </SelectItem>
+                    <SelectItem value="ollama:llama3.1:8b">
+                      Ollama · Llama 3.1 8B
+                    </SelectItem>
+                    <SelectItem value="kimi:kimi-k2.5">
+                      Kimi · K2.5
+                    </SelectItem>
+                    <SelectItem value="gemini:gemini-2.5-flash">
+                      Gemini · 2.5 Flash
+                    </SelectItem>
+                    <SelectItem value="openai:gpt-4o-mini">
+                      OpenAI · GPT-4o Mini
                     </SelectItem>
                   </SelectGroup>
                 </SelectContent>

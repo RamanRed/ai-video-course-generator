@@ -30,6 +30,7 @@ type CourseSnapshot = {
   courseDescription: string;
   topicName: string;
   userInput: string;
+  slideModel?: string;
   chapters: CourseChapter[];
   slides: CourseSlide[];
 };
@@ -248,6 +249,7 @@ export const getCourseSnapshotByCourseId = async (
       | {
           courseName?: string;
           courseDescription?: string;
+          slideModel?: string;
           chapters?: CourseChapter[];
         }
       | null)
@@ -260,6 +262,7 @@ export const getCourseSnapshotByCourseId = async (
         courseLayout.courseDescription || `A concise course on ${course.courseName}.`,
       topicName: courseLayout.courseName || course.courseName || course.userInput,
       userInput: course.userInput,
+      slideModel: courseLayout.slideModel,
       chapters: Array.isArray(courseLayout.chapters) ? courseLayout.chapters : [],
       slides: slides as CourseSlide[],
     };
@@ -278,6 +281,7 @@ export const getCourseSnapshotByCourseId = async (
       | {
           courseName?: string;
           courseDescription?: string;
+          slideModel?: string;
           chapters?: CourseChapter[];
         }
       | null)
@@ -291,6 +295,7 @@ export const getCourseSnapshotByCourseId = async (
       topicName:
         courseLayout.courseName || localCourse.courseName || localCourse.userInput,
       userInput: localCourse.userInput,
+      slideModel: courseLayout.slideModel,
       chapters: Array.isArray(courseLayout.chapters) ? courseLayout.chapters : [],
       slides: (localCourse.chapterContentSlides as CourseSlide[]) || [],
     };

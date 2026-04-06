@@ -8,6 +8,7 @@ import { isDatabaseConnectionError, saveLocalCourse } from "@/lib/dbFallback";
 import { getCurrentUser } from "@/lib/auth";
 import { getGenerationModel, normalizeAiProvider } from "@/lib/ai-provider";
 import { indexCourseRagSource } from "@/lib/course-rag";
+import { normalizeSlideModel } from "@/lib/slide-model";
 
 type CourseChapter = {
   chapterId: string;
@@ -23,6 +24,7 @@ type CourseLayout = {
   totalChapters: number;
   chapters: CourseChapter[];
   aiProvider?: "global-ai" | "local-ai";
+  slideModel?: string;
 };
 
 type ApiErrorLike = {
@@ -167,7 +169,7 @@ const getErrorStatus = (error: unknown) => {
 
 export async function POST(req: NextRequest) {
   try {
-    const { userInput, courseId, type, aiProvider } = await req.json();
+    const { userInput, courseId, type, aiProvider, slideModel } = await req.json();
     let userEmail = "";
 
     try {
@@ -188,6 +190,7 @@ export async function POST(req: NextRequest) {
     }
 
     const resolvedAiProvider = normalizeAiProvider(aiProvider);
+    const resolvedSlideModel = normalizeSlideModel(slideModel);
     const model = getGenerationModel({
       provider: resolvedAiProvider,
       temperature: 0.2,
@@ -215,6 +218,7 @@ export async function POST(req: NextRequest) {
     const courseLayout = {
       ...JSONResult,
       aiProvider: resolvedAiProvider,
+      slideModel: resolvedSlideModel,
     };
 
     try {

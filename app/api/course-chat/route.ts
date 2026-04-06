@@ -1,7 +1,6 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-
 import { getGenerationModel } from "@/lib/ai-provider";
 import {
   buildCourseContextBlock,
@@ -23,7 +22,14 @@ export async function POST(req: NextRequest) {
     const snapshot = await getCourseSnapshotByCourseId(courseId);
 
     if (!snapshot) {
-      return NextResponse.json({ error: "Course not found" }, { status: 404 });
+      return NextResponse.json({
+        answer:
+          "I could not find that course record yet. Please regenerate the course or upload topic data, then ask again.",
+        needUpload: true,
+        namespace: null,
+        sources: [],
+        pineconeAvailable: false,
+      });
     }
 
     const ragResult = await queryCourseRag({
@@ -44,13 +50,13 @@ export async function POST(req: NextRequest) {
 Answer using only the course context below.
 If the context is not enough, say you do not have enough course information.
 Keep the answer concise, practical, and friendly.
-  Format your response exactly like this:
-  Summary: <1-2 lines>
-  Key Points:
-  - <point 1>
-  - <point 2>
-  - <point 3 if needed>
-  Next Step: <single actionable suggestion>
+Format your response exactly like this:
+Summary: <1-2 lines>
+Key Points:
+- <point 1>
+- <point 2>
+- <point 3 if needed>
+Next Step: <single actionable suggestion>
 
 COURSE CONTEXT:
 ${contextBlock}

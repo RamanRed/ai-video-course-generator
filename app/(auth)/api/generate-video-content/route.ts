@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import axios from "axios";
 import { db } from "@/config/db";
 import { chapterContentSlides } from "@/config/schema";
-import { getGenerationModel } from "@/lib/ai-provider";
 import { isDatabaseConnectionError, saveLocalSlides } from "@/lib/dbFallback";
 import {
   buildTopicContextFromMatches,
@@ -10,7 +9,7 @@ import {
   indexCourseRagSource,
   queryCourseRag,
 } from "@/lib/course-rag";
-import { getKimiSlideModel, hasKimiApiKey } from "@/lib/kimi";
+import { getSlideGenerationModel, normalizeSlideModel } from "@/lib/slide-model";
 import { Generate_Video_Content_Prompt } from "@/data/Prompt";
 import { saveAudio } from "@/lib/audioStorage";
 
@@ -97,8 +96,11 @@ export async function POST(req: NextRequest) {
     "Chapter Detail Is " +
     JSON.stringify(chapter);
 
+  let courseSnapshot = null;
+
   try {
     const snapshot = await getCourseSnapshotByCourseId(courseId);
+    courseSnapshot = snapshot;
     const topicName =
       snapshot?.topicName || snapshot?.courseName || chapter?.chapterTitle || "course";
 
@@ -118,20 +120,22 @@ export async function POST(req: NextRequest) {
   }
 
   let response;
+  const selectedSlideModel = normalizeSlideModel(courseSnapshot?.slideModel);
 
   try {
-    const kimiModel = getKimiSlideModel({ temperature: 0.2 });
-    response = await kimiModel.generateContent(slidePrompt);
+    const selectedModel = getSlideGenerationModel({
+      slideModel: selectedSlideModel,
+      temperature: 0.2,
+    });
+    response = await selectedModel.generateContent(slidePrompt);
   } catch (error) {
     console.warn(
-      hasKimiApiKey()
-        ? "Kimi slide generation failed, falling back to local Ollama"
-        : "No Moonshot API key found, falling back to local Ollama",
+      `Selected slide model (${selectedSlideModel}) failed, falling back to local Ollama`,
       error,
     );
 
-    const localModel = getGenerationModel({
-      provider: "local-ai",
+    const localModel = getSlideGenerationModel({
+      slideModel: "ollama:mistral:latest",
       temperature: 0.3,
     });
 
@@ -199,17 +203,17 @@ export async function POST(req: NextRequest) {
     }
 
     try {
-      const courseSnapshot = await getCourseSnapshotByCourseId(courseId);
+      const latestSnapshot = await getCourseSnapshotByCourseId(courseId);
 
-      if (courseSnapshot) {
+      if (latestSnapshot) {
         await indexCourseRagSource({
-          courseId: courseSnapshot.courseId,
-          courseName: courseSnapshot.courseName,
-          courseDescription: courseSnapshot.courseDescription,
-          topicName: courseSnapshot.topicName,
-          userInput: courseSnapshot.userInput,
-          chapters: courseSnapshot.chapters,
-          slides: [...courseSnapshot.slides, ...VideoContentJson],
+          courseId: latestSnapshot.courseId,
+          courseName: latestSnapshot.courseName,
+          courseDescription: latestSnapshot.courseDescription,
+          topicName: latestSnapshot.topicName,
+          userInput: latestSnapshot.userInput,
+          chapters: latestSnapshot.chapters,
+          slides: [...latestSnapshot.slides, ...VideoContentJson],
         });
       }
     } catch (indexError) {

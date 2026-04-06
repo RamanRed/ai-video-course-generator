@@ -46,13 +46,13 @@ export async function POST(req: NextRequest) {
     const prompt = `You are a helpful tutor. Answer only using the context.
 If context is insufficient, explicitly say so.
 Keep answers concise and practical.
-  Format your response exactly like this:
-  Summary: <1-2 lines>
-  Key Points:
-  - <point 1>
-  - <point 2>
-  - <point 3 if needed>
-  Next Step: <single actionable suggestion>
+Format your response exactly like this:
+Summary: <1-2 lines>
+Key Points:
+- <point 1>
+- <point 2>
+- <point 3 if needed>
+Next Step: <single actionable suggestion>
 
 TOPIC:
 ${topicName}

@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import axios from "axios";
 
 export type AiProvider = "global-ai" | "local-ai";
 
@@ -23,11 +24,14 @@ const GEMINI_KEYS = (
 const OLLAMA_BASE_URL =
   process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "mistral:latest";
+const OLLAMA_REQUEST_TIMEOUT_MS = Number(
+  process.env.OLLAMA_REQUEST_TIMEOUT_MS || 30 * 60 * 1000,
+);
 
 let keyIndex = 0;
 
 export const normalizeAiProvider = (value?: string | null): AiProvider =>
-  value === "local-ai" ? "local-ai" : "global-ai";
+  value === "global-ai" ? "global-ai" : "local-ai";
 
 class OllamaTextModel {
   constructor(
@@ -39,12 +43,9 @@ class OllamaTextModel {
   ) {}
 
   async generateContent(prompt: string) {
-    const response = await fetch(`${this.config.baseUrl}/api/generate`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
+    const response = await axios.post<OllamaGenerateResponse>(
+      `${this.config.baseUrl}/api/generate`,
+      {
         model: this.config.model,
         prompt,
         stream: false,
@@ -52,16 +53,24 @@ class OllamaTextModel {
         options: {
           temperature: this.config.temperature,
         },
-      }),
-    });
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+        },
+        timeout: OLLAMA_REQUEST_TIMEOUT_MS,
+        proxy: false,
+        validateStatus: () => true,
+      },
+    );
 
-    if (!response.ok) {
+    if (response.status < 200 || response.status >= 300) {
       throw new Error(
         `Ollama request failed with status ${response.status} (${response.statusText})`,
       );
     }
 
-    const data = (await response.json()) as OllamaGenerateResponse;
+    const data = response.data;
 
     if (typeof data.response !== "string" || !data.response.trim()) {
       throw new Error(data.error || "Ollama returned an empty response");
@@ -99,7 +108,13 @@ const createGeminiModel = (config?: GenerateModelConfig) => {
 export const getGenerationModel = (config?: GenerateModelConfig) => {
   const provider = normalizeAiProvider(config?.provider);
 
-  if (provider === "local-ai") {
+  if (provider === "local-ai" || GEMINI_KEYS.length === 0) {
+    if (provider === "global-ai" && GEMINI_KEYS.length === 0) {
+      console.warn(
+        "Gemini keys are missing. Falling back to local Ollama model.",
+      );
+    }
+
     return new OllamaTextModel({
       baseUrl: OLLAMA_BASE_URL,
       model: config?.model || OLLAMA_MODEL,

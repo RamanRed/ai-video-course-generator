@@ -30,7 +30,7 @@ import { v4 as uuidv4 } from "uuid";
 const Hero = () => {
   const [userInput, setUserInput] = useState("");
   const [type, setType] = useState("full-course");
-  const [aiProvider, setAiProvider] = useState("global-ai");
+  const [aiProvider, setAiProvider] = useState("local-ai");
   const [loading, setLoading] = useState(false);
   // JWT auth: read user from context instead of Clerk's useUser()
   const { userDetail } = useContext(UserDetailContext);

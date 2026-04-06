@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import axios from "axios";
 import { db } from "@/config/db";
-import { chapterContentSlides, coursesTable } from "@/config/schema";
-import { getGenerationModel, normalizeAiProvider } from "@/lib/ai-provider";
+import { chapterContentSlides } from "@/config/schema";
+import { getGenerationModel } from "@/lib/ai-provider";
+import { isDatabaseConnectionError, saveLocalSlides } from "@/lib/dbFallback";
 import {
-  getLocalCourse,
-  isDatabaseConnectionError,
-  saveLocalSlides,
-} from "@/lib/dbFallback";
+  getCourseSnapshotByCourseId,
+  indexCourseRagSource,
+} from "@/lib/course-rag";
+import { getKimiSlideModel, hasKimiApiKey } from "@/lib/kimi";
 import { Generate_Video_Content_Prompt } from "@/data/Prompt";
 import { saveAudio } from "@/lib/audioStorage";
-import { eq } from "drizzle-orm";
 
 type GeneratedSlide = {
   slideIndex: number;
@@ -90,46 +90,31 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let aiProvider = "global-ai";
+  const slidePrompt =
+    Generate_Video_Content_Prompt +
+    "Chapter Detail Is " +
+    JSON.stringify(chapter);
+
+  let response;
 
   try {
-    const courses = await db
-      .select()
-      .from(coursesTable)
-      .where(eq(coursesTable.courseId, courseId));
-
-    const course = courses[0];
-
-    if (course) {
-      aiProvider = normalizeAiProvider(
-        (course.courseLayout as { aiProvider?: string } | null)?.aiProvider,
-      );
-    }
+    const kimiModel = getKimiSlideModel({ temperature: 0.2 });
+    response = await kimiModel.generateContent(slidePrompt);
   } catch (error) {
-    if (!isDatabaseConnectionError(error)) {
-      throw error;
-    }
+    console.warn(
+      hasKimiApiKey()
+        ? "Kimi slide generation failed, falling back to local Ollama"
+        : "No Moonshot API key found, falling back to local Ollama",
+      error,
+    );
 
-    const localCourse = await getLocalCourse(courseId);
+    const localModel = getGenerationModel({
+      provider: "local-ai",
+      temperature: 0.3,
+    });
 
-    if (localCourse) {
-      aiProvider = normalizeAiProvider(
-        (localCourse.courseLayout as { aiProvider?: string } | null)
-          ?.aiProvider,
-      );
-    }
+    response = await localModel.generateContent(slidePrompt);
   }
-
-  const model = getGenerationModel({
-    provider: aiProvider,
-    temperature: 0.3,
-  });
-
-  const response = await model.generateContent(
-    Generate_Video_Content_Prompt +
-      "Chapter Detail Is " +
-      JSON.stringify(chapter),
-  );
 
   const AiResponse = response.response.text();
 
@@ -189,6 +174,27 @@ export async function POST(req: NextRequest) {
         .returning();
 
       console.log(`✓ Slide saved to DB: ${slide.slideId}`);
+    }
+
+    try {
+      const courseSnapshot = await getCourseSnapshotByCourseId(courseId);
+
+      if (courseSnapshot) {
+        await indexCourseRagSource({
+          courseId: courseSnapshot.courseId,
+          courseName: courseSnapshot.courseName,
+          courseDescription: courseSnapshot.courseDescription,
+          topicName: courseSnapshot.topicName,
+          userInput: courseSnapshot.userInput,
+          chapters: courseSnapshot.chapters,
+          slides: [...courseSnapshot.slides, ...VideoContentJson],
+        });
+      }
+    } catch (indexError) {
+      console.warn(
+        "Course RAG indexing skipped after slide generation:",
+        indexError,
+      );
     }
   } catch (error) {
     if (!isDatabaseConnectionError(error)) {

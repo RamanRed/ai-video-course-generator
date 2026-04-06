@@ -7,6 +7,7 @@ import { isDatabaseConnectionError, saveLocalCourse } from "@/lib/dbFallback";
 // import { currentUser } from "@clerk/nextjs/server";
 import { getCurrentUser } from "@/lib/auth";
 import { getGenerationModel, normalizeAiProvider } from "@/lib/ai-provider";
+import { indexCourseRagSource } from "@/lib/course-rag";
 
 type CourseChapter = {
   chapterId: string;
@@ -229,6 +230,19 @@ export async function POST(req: NextRequest) {
         })
         .returning();
 
+      try {
+        await indexCourseRagSource({
+          courseId,
+          courseName: JSONResult.courseName,
+          courseDescription: JSONResult.courseDescription,
+          topicName: JSONResult.courseName,
+          userInput,
+          chapters: JSONResult.chapters,
+        });
+      } catch (indexError) {
+        console.warn("Course RAG indexing skipped after DB save:", indexError);
+      }
+
       return NextResponse.json(courseResult[0]);
     } catch (error) {
       if (!isDatabaseConnectionError(error)) {
@@ -247,6 +261,22 @@ export async function POST(req: NextRequest) {
         courseLayout,
         userId: userEmail,
       });
+
+      try {
+        await indexCourseRagSource({
+          courseId,
+          courseName: JSONResult.courseName,
+          courseDescription: JSONResult.courseDescription,
+          topicName: JSONResult.courseName,
+          userInput,
+          chapters: JSONResult.chapters,
+        });
+      } catch (indexError) {
+        console.warn(
+          "Course RAG indexing skipped after local save:",
+          indexError,
+        );
+      }
 
       return NextResponse.json(localCourse);
     }

@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import CourseInfoCard from "./_components/CourseInfoCard";
 import CourseChapter from "./_components/CourseChapter";
+import CourseChatPanel from "./_components/CourseChatPanel";
 import axios from "axios";
 import { useParams } from "next/navigation";
 import { Course } from "@/type/CourseType";
@@ -206,6 +207,7 @@ function CoursePreview() {
         course={courseDetail}
         durationBySlideId={durationBySlideId}
       />
+      <CourseChatPanel course={courseDetail} />
     </div>
   );
 }

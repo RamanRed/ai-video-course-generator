@@ -3,7 +3,7 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import { db } from "@/config/db";
 import { coursesTable, slidesTable } from "@/config/schema";
 import { ServiceError } from "@/lib/service-error";
-import { ensureUserProfile } from "@/services/user.service";
+import { ensureProfile } from "@/services/profile.service";
 
 type PersistedCourseLayout = Record<string, unknown>;
 
@@ -42,7 +42,7 @@ const mapSlide = (slide: typeof slidesTable.$inferSelect) => ({
 });
 
 export const listCoursesForUser = async (userId: string) => {
-  await ensureUserProfile(userId);
+  await ensureProfile(userId);
 
   const courses = await db
     .select()
@@ -90,7 +90,7 @@ export const createCourseForUser = async (input: {
   type: string;
   layout: PersistedCourseLayout;
 }) => {
-  await ensureUserProfile(input.userId);
+  await ensureProfile(input.userId);
 
   const [course] = await db
     .insert(coursesTable)

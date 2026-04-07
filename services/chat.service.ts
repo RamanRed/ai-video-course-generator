@@ -4,7 +4,7 @@ import { db } from "@/config/db";
 import { conversationsTable, messagesTable } from "@/config/schema";
 import { ServiceError } from "@/lib/service-error";
 import { getOwnedCourseRecord } from "@/services/course.service";
-import { ensureUserProfile } from "@/services/user.service";
+import { ensureProfile } from "@/services/profile.service";
 
 type MessageRole = "user" | "assistant";
 
@@ -15,7 +15,7 @@ export const createConversation = async (
   userId: string,
   courseId?: string | null,
 ) => {
-  await ensureUserProfile(userId);
+  await ensureProfile(userId);
 
   if (courseId) {
     const course = await getOwnedCourseRecord(userId, courseId);

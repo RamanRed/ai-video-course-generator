@@ -8,6 +8,7 @@ const isProtectedRoute = createRouteMatcher([
   "/api/generate-video-content(.*)",
   "/api/course-chat(.*)",
   "/api/home-chat(.*)",
+  "/api/forum(.*)",
   "/api/rag-upload-pdf(.*)",
   "/api/audio(.*)",
 ]);

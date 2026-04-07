@@ -1,6 +1,6 @@
 import { db } from "@/config/db";
 import { documentsTable } from "@/config/schema";
-import { ensureUserProfile } from "@/services/user.service";
+import { ensureProfile } from "@/services/profile.service";
 
 export const createDocument = async (input: {
   id: string;
@@ -9,7 +9,7 @@ export const createDocument = async (input: {
   topicName: string;
   namespace: string | null;
 }) => {
-  await ensureUserProfile(input.userId);
+  await ensureProfile(input.userId);
 
   const [document] = await db
     .insert(documentsTable)

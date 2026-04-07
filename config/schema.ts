@@ -1,9 +1,11 @@
 import {
+  index,
   integer,
   json,
   pgTable,
   text,
   timestamp,
+  uuid,
   varchar,
 } from "drizzle-orm/pg-core";
 
@@ -19,7 +21,7 @@ export const profilesTable = pgTable("profiles", {
     .unique()
     .references(() => usersTable.id, { onDelete: "cascade" }),
   pseudonym: varchar({ length: 255 }).notNull(),
-  avatar: varchar({ length: 1024 }),
+  avatar: varchar({ length: 1024 }).notNull(),
   createdAt: timestamp().defaultNow().notNull(),
 });
 
@@ -71,6 +73,8 @@ export const messagesTable = pgTable("messages", {
     .references(() => conversationsTable.id, { onDelete: "cascade" }),
   role: varchar({ length: 50 }).notNull(),
   content: text().notNull(),
+  pseudonymSnapshot: varchar({ length: 255 }),
+  avatarSnapshot: varchar({ length: 1024 }),
   sources: json(),
   metadata: json(),
   createdAt: timestamp().defaultNow().notNull(),
@@ -86,3 +90,49 @@ export const documentsTable = pgTable("documents", {
   namespace: varchar({ length: 255 }),
   createdAt: timestamp().defaultNow().notNull(),
 });
+
+export const forumThreadsTable = pgTable(
+  "forum_threads",
+  {
+    id: uuid().primaryKey(),
+    userId: varchar({ length: 255 })
+      .notNull()
+      .references(() => usersTable.id, { onDelete: "cascade" }),
+    title: varchar({ length: 255 }).notNull(),
+    content: text().notNull(),
+    pseudonymSnapshot: varchar({ length: 255 }).notNull(),
+    avatarSnapshot: varchar({ length: 1024 }).notNull(),
+    createdAt: timestamp().defaultNow().notNull(),
+    updatedAt: timestamp().defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdIdx: index("forum_threads_user_id_idx").on(table.userId),
+    createdAtIdx: index("forum_threads_created_at_idx").on(table.createdAt),
+    updatedAtIdx: index("forum_threads_updated_at_idx").on(table.updatedAt),
+  }),
+);
+
+export const forumRepliesTable = pgTable(
+  "forum_replies",
+  {
+    id: uuid().primaryKey(),
+    threadId: uuid()
+      .notNull()
+      .references(() => forumThreadsTable.id, { onDelete: "cascade" }),
+    userId: varchar({ length: 255 })
+      .notNull()
+      .references(() => usersTable.id, { onDelete: "cascade" }),
+    parentReplyId: uuid(),
+    content: text().notNull(),
+    pseudonymSnapshot: varchar({ length: 255 }).notNull(),
+    avatarSnapshot: varchar({ length: 1024 }).notNull(),
+    createdAt: timestamp().defaultNow().notNull(),
+  },
+  (table) => ({
+    threadIdIdx: index("forum_replies_thread_id_idx").on(table.threadId),
+    parentReplyIdIdx: index("forum_replies_parent_reply_id_idx").on(
+      table.parentReplyId,
+    ),
+    createdAtIdx: index("forum_replies_created_at_idx").on(table.createdAt),
+  }),
+);

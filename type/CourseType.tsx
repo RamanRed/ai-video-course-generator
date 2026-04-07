@@ -15,6 +15,8 @@ export type courseLayout = {
   level: string;
   totalChapters: number;
   chapters: Chapter[];
+  aiProvider?: "global-ai" | "local-ai";
+  slideModel?: string;
 };
 
 export type Chapter = {

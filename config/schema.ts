@@ -43,3 +43,29 @@ export const chapterContentSlides = pgTable("chapter_content_slides", {
   html: text(),
   revealData: json("revelData").notNull(),
 });
+
+// Chat persistence tables
+export const chatConversations = pgTable("chat_conversations", {
+  id: varchar({ length: 255 }).primaryKey(),
+  userId: varchar({ length: 255 })
+    .notNull()
+    .references(() => usersTable.email),
+  courseId: varchar({ length: 255 }),
+  topicName: varchar({ length: 255 }),
+  chatType: varchar({ length: 50 }).notNull(), // "course" or "home"
+  title: varchar({ length: 255 }),
+  createdAt: timestamp().defaultNow(),
+  updatedAt: timestamp().defaultNow(),
+});
+
+export const chatMessages = pgTable("chat_messages", {
+  id: integer().primaryKey().generatedAlwaysAsIdentity(),
+  conversationId: varchar({ length: 255 })
+    .notNull()
+    .references(() => chatConversations.id, { onDelete: "cascade" }),
+  role: varchar({ length: 50 }).notNull(), // "user" or "assistant"
+  content: text().notNull(),
+  sources: json(), // For storing RAG sources
+  metadata: json(), // For additional context
+  createdAt: timestamp().defaultNow(),
+});

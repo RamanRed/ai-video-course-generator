@@ -3,9 +3,13 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/config/db";
 import { usersTable } from "@/config/schema";
-import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { signToken, setAuthCookie } from "@/lib/auth";
+import {
+  isDatabaseConnectionError,
+  saveLocalAuthUser,
+} from "@/lib/dbFallback";
+import { eq } from "drizzle-orm";
 
 export async function POST(req: NextRequest) {
   const { email, name, password } = await req.json();
@@ -24,24 +28,42 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const existing = await db
-    .select()
-    .from(usersTable)
-    .where(eq(usersTable.email, email));
-
-  if (existing.length > 0) {
-    return NextResponse.json(
-      { error: "An account with this email already exists" },
-      { status: 409 },
-    );
-  }
-
   const passwordHash = await bcrypt.hash(password, 12);
 
-  const [user] = await db
-    .insert(usersTable)
-    .values({ email, name, passwordHash })
-    .returning();
+  let user;
+
+  try {
+    const existing = await db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.email, email));
+
+    if (existing.length > 0) {
+      return NextResponse.json(
+        { error: "An account with this email already exists" },
+        { status: 409 },
+      );
+    }
+
+    const [createdUser] = await db
+      .insert(usersTable)
+      .values({ email, name, passwordHash })
+      .returning();
+
+    user = createdUser;
+  } catch (error) {
+    if (!isDatabaseConnectionError(error)) {
+      throw error;
+    }
+
+    const existingLocalUser = await saveLocalAuthUser({
+      email,
+      name,
+      passwordHash,
+    });
+
+    user = existingLocalUser;
+  }
 
   const token = await signToken({
     id: user.id,

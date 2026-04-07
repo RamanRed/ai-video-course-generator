@@ -2,8 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import axios from "axios";
 import { db } from "@/config/db";
 import { chapterContentSlides } from "@/config/schema";
-import { getGeminiModel } from "@/lib/gemini";
 import { isDatabaseConnectionError, saveLocalSlides } from "@/lib/dbFallback";
+import {
+  buildTopicContextFromMatches,
+  getCourseSnapshotByCourseId,
+  indexCourseRagSource,
+  queryCourseRag,
+} from "@/lib/course-rag";
+import { getSlideGenerationModel, normalizeSlideModel } from "@/lib/slide-model";
 import { Generate_Video_Content_Prompt } from "@/data/Prompt";
 import { saveAudio } from "@/lib/audioStorage";
 
@@ -78,13 +84,63 @@ const splitTextIntoChunks = (text: string, maxLength: number) => {
 export async function POST(req: NextRequest) {
   const { chapter, chapterId, courseId } = await req.json();
 
-  const model = getGeminiModel({ temperature: 0.3 });
+  if (!courseId) {
+    return NextResponse.json(
+      { error: "courseId is required" },
+      { status: 400 },
+    );
+  }
 
-  const response = await model.generateContent(
+  let slidePrompt =
     Generate_Video_Content_Prompt +
-      "Chapter Detail Is " +
-      JSON.stringify(chapter),
-  );
+    "Chapter Detail Is " +
+    JSON.stringify(chapter);
+
+  let courseSnapshot = null;
+
+  try {
+    const snapshot = await getCourseSnapshotByCourseId(courseId);
+    courseSnapshot = snapshot;
+    const topicName =
+      snapshot?.topicName || snapshot?.courseName || chapter?.chapterTitle || "course";
+
+    const ragResult = await queryCourseRag({
+      topicName,
+      question: JSON.stringify(chapter),
+      topK: 6,
+    });
+
+    const retrievalContext = buildTopicContextFromMatches(ragResult.matches);
+
+    if (retrievalContext) {
+      slidePrompt += `\n\nUse this prior topic context to improve slide quality and continuity:\n${retrievalContext}`;
+    }
+  } catch (ragError) {
+    console.warn("Slide generation RAG enrichment skipped:", ragError);
+  }
+
+  let response;
+  const selectedSlideModel = normalizeSlideModel(courseSnapshot?.slideModel);
+
+  try {
+    const selectedModel = getSlideGenerationModel({
+      slideModel: selectedSlideModel,
+      temperature: 0.2,
+    });
+    response = await selectedModel.generateContent(slidePrompt);
+  } catch (error) {
+    console.warn(
+      `Selected slide model (${selectedSlideModel}) failed, falling back to local Ollama`,
+      error,
+    );
+
+    const localModel = getSlideGenerationModel({
+      slideModel: "ollama:mistral:latest",
+      temperature: 0.3,
+    });
+
+    response = await localModel.generateContent(slidePrompt);
+  }
 
   const AiResponse = response.response.text();
 
@@ -144,6 +200,27 @@ export async function POST(req: NextRequest) {
         .returning();
 
       console.log(`✓ Slide saved to DB: ${slide.slideId}`);
+    }
+
+    try {
+      const latestSnapshot = await getCourseSnapshotByCourseId(courseId);
+
+      if (latestSnapshot) {
+        await indexCourseRagSource({
+          courseId: latestSnapshot.courseId,
+          courseName: latestSnapshot.courseName,
+          courseDescription: latestSnapshot.courseDescription,
+          topicName: latestSnapshot.topicName,
+          userInput: latestSnapshot.userInput,
+          chapters: latestSnapshot.chapters,
+          slides: [...latestSnapshot.slides, ...VideoContentJson],
+        });
+      }
+    } catch (indexError) {
+      console.warn(
+        "Course RAG indexing skipped after slide generation:",
+        indexError,
+      );
     }
   } catch (error) {
     if (!isDatabaseConnectionError(error)) {

@@ -6,6 +6,7 @@ type StoredUser = {
   name: string;
   email: string;
   credits: number;
+  passwordHash?: string;
 };
 
 type StoredCourse = {
@@ -156,6 +157,46 @@ export const upsertLocalUser = async (input: {
     email: input.email,
     name: input.name,
     credits: 2,
+  };
+
+  store.users.push(newUser);
+  await writeStore(store);
+  return newUser;
+};
+
+export const getLocalUserByEmail = async (email: string) => {
+  const store = await readStore();
+  return store.users.find((user) => user.email === email) ?? null;
+};
+
+export const saveLocalAuthUser = async (input: {
+  email: string;
+  name: string;
+  passwordHash: string;
+}) => {
+  const store = await readStore();
+  const existingUser = store.users.find((user) => user.email === input.email);
+
+  if (existingUser) {
+    const updatedUser = {
+      ...existingUser,
+      name: input.name || existingUser.name,
+      passwordHash: input.passwordHash,
+    };
+
+    store.users = store.users.map((user) =>
+      user.email === input.email ? updatedUser : user,
+    );
+    await writeStore(store);
+    return updatedUser;
+  }
+
+  const newUser: StoredUser = {
+    id: nextId(store.users),
+    email: input.email,
+    name: input.name,
+    credits: 2,
+    passwordHash: input.passwordHash,
   };
 
   store.users.push(newUser);

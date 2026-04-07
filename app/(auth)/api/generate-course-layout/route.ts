@@ -6,7 +6,9 @@ import { isDatabaseConnectionError, saveLocalCourse } from "@/lib/dbFallback";
 // Clerk's currentUser commented out — replaced with JWT getCurrentUser()
 // import { currentUser } from "@clerk/nextjs/server";
 import { getCurrentUser } from "@/lib/auth";
-import { getGeminiModel } from "@/lib/gemini";
+import { getGenerationModel, normalizeAiProvider } from "@/lib/ai-provider";
+import { indexCourseRagSource } from "@/lib/course-rag";
+import { normalizeSlideModel } from "@/lib/slide-model";
 
 type CourseChapter = {
   chapterId: string;
@@ -21,6 +23,8 @@ type CourseLayout = {
   level: "Beginner" | "Intermediate" | "Advanced";
   totalChapters: number;
   chapters: CourseChapter[];
+  aiProvider?: "global-ai" | "local-ai";
+  slideModel?: string;
 };
 
 type ApiErrorLike = {
@@ -165,7 +169,7 @@ const getErrorStatus = (error: unknown) => {
 
 export async function POST(req: NextRequest) {
   try {
-    const { userInput, courseId, type } = await req.json();
+    const { userInput, courseId, type, aiProvider, slideModel } = await req.json();
     let userEmail = "";
 
     try {
@@ -185,7 +189,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const model = getGeminiModel({ temperature: 0.2 });
+    const resolvedAiProvider = normalizeAiProvider(aiProvider);
+    const resolvedSlideModel = normalizeSlideModel(slideModel);
+    const model = getGenerationModel({
+      provider: resolvedAiProvider,
+      temperature: 0.2,
+    });
 
     const response = await model.generateContent(
       `${Course_config_prompt}\n\nCourse Topic is ${userInput}`,
@@ -206,6 +215,11 @@ export async function POST(req: NextRequest) {
     }
 
     const JSONResult = sanitizeCourseLayout(parsedResult, userInput, courseId);
+    const courseLayout = {
+      ...JSONResult,
+      aiProvider: resolvedAiProvider,
+      slideModel: resolvedSlideModel,
+    };
 
     try {
       const courseResult = await db
@@ -215,10 +229,23 @@ export async function POST(req: NextRequest) {
           courseName: JSONResult.courseName,
           userInput,
           type,
-          courseLayout: JSONResult,
+          courseLayout,
           userId: userEmail,
         })
         .returning();
+
+      try {
+        await indexCourseRagSource({
+          courseId,
+          courseName: JSONResult.courseName,
+          courseDescription: JSONResult.courseDescription,
+          topicName: JSONResult.courseName,
+          userInput,
+          chapters: JSONResult.chapters,
+        });
+      } catch (indexError) {
+        console.warn("Course RAG indexing skipped after DB save:", indexError);
+      }
 
       return NextResponse.json(courseResult[0]);
     } catch (error) {
@@ -235,9 +262,25 @@ export async function POST(req: NextRequest) {
         courseName: JSONResult.courseName,
         userInput,
         type,
-        courseLayout: JSONResult,
+        courseLayout,
         userId: userEmail,
       });
+
+      try {
+        await indexCourseRagSource({
+          courseId,
+          courseName: JSONResult.courseName,
+          courseDescription: JSONResult.courseDescription,
+          topicName: JSONResult.courseName,
+          userInput,
+          chapters: JSONResult.chapters,
+        });
+      } catch (indexError) {
+        console.warn(
+          "Course RAG indexing skipped after local save:",
+          indexError,
+        );
+      }
 
       return NextResponse.json(localCourse);
     }
